@@ -1,0 +1,70 @@
+name: Compilar v0.8 isolada (teste)
+
+# Gera o APK de teste v0.8 (br.local.assistente.v08), que instala ao lado da v0.7.
+# Sem release e sem publicação. O APK vai só como artefato do Actions, retenção de 1 dia.
+# A chave de assinatura é descartável: vale apenas para a primeira instalação.
+on:
+  push:
+    branches: [v08-teste-isolado]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compilar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extrair o projeto
+        run: |
+          sha256sum AssistenteLocal_v0.8_isolada.zip
+          unzip -q AssistenteLocal_v0.8_isolada.zip
+          find AssistenteLocal -type f | sort | xargs sha256sum
+
+      - name: Gerar chave de assinatura descartavel (so existe neste job)
+        working-directory: AssistenteLocal
+        run: |
+          keytool -genkeypair -keystore app/debug.keystore -storepass android -keypass android \
+            -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Compilar (assembleDebug)
+        working-directory: AssistenteLocal
+        run: gradle assembleDebug --no-daemon --console=plain --warning-mode all
+
+      - name: Conferir o APK com aapt2
+        working-directory: AssistenteLocal
+        run: |
+          APK=app/build/outputs/apk/debug/app-debug.apk
+          AAPT2=$(ls -d "$ANDROID_HOME"/build-tools/*/aapt2 | sort -V | tail -1)
+          echo "aapt2: $AAPT2"
+          ls -l "$APK"
+          sha256sum "$APK"
+          "$AAPT2" dump badging "$APK" > badging.txt
+          grep -E "^package:|^sdkVersion|^targetSdkVersion|^application-label|^launchable-activity|^uses-permission" badging.txt
+          echo "--- permissoes"
+          "$AAPT2" dump permissions "$APK"
+          echo "--- verificacoes"
+          grep -q "^package: name='br.local.assistente.v08' versionCode='8' versionName='0.8-teste'" badging.txt
+          grep -q "^application-label:'Assistente Local v0.8 (teste)'" badging.txt
+          ! grep -q "name='br.local.assistente' " badging.txt
+          echo "pacote, versao e rotulo conferem"
+
+      - name: Disponibilizar o APK como artefato (1 dia)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Assistente-v08-teste-APK
+          path: AssistenteLocal/app/build/outputs/apk/debug/app-debug.apk
+          retention-days: 1
+          if-no-files-found: error
