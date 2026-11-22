@@ -1,0 +1,46 @@
+name: Validacao de compilacao v0.8
+
+# Somente validação de compilação. Não publica, não anexa e não distribui o APK.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compilar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extrair o projeto v0.8
+        run: |
+          sha256sum AssistenteLocal_v0.8_validacao.zip
+          unzip -q AssistenteLocal_v0.8_validacao.zip
+          find AssistenteLocal -type f | sort | xargs sha256sum
+
+      - name: Gerar chave de assinatura descartavel (so existe neste job)
+        working-directory: AssistenteLocal
+        run: |
+          keytool -genkeypair -keystore app/debug.keystore -storepass android -keypass android \
+            -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+            -dname "CN=Android Debug,O=Android,C=US"
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.7
+
+      - name: Compilar (assembleDebug)
+        working-directory: AssistenteLocal
+        run: gradle assembleDebug --no-daemon --console=plain --warning-mode all
+
+      - name: Registrar resultado do APK (sem publicar)
+        working-directory: AssistenteLocal
+        run: |
+          ls -l app/build/outputs/apk/debug/
+          sha256sum app/build/outputs/apk/debug/app-debug.apk
