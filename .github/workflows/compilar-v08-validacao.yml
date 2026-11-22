@@ -2,6 +2,8 @@ name: Validacao de compilacao v0.8
 
 # Somente validação de compilação. Não publica, não anexa e não distribui o APK.
 on:
+  push:
+    branches: [validacao-v08]
   workflow_dispatch:
 
 permissions:
