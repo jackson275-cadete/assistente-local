@@ -55,11 +55,41 @@ jobs:
           grep -E "^package:|^sdkVersion|^targetSdkVersion|^application-label|^launchable-activity|^uses-permission" badging.txt
           echo "--- permissoes"
           "$AAPT2" dump permissions "$APK"
+          echo "--- manifesto completo (aapt2 dump xmltree)"
+          "$AAPT2" dump xmltree --file AndroidManifest.xml "$APK" | tee manifesto.txt
           echo "--- verificacoes"
           grep -q "^package: name='br.local.assistente.v08' versionCode='8' versionName='0.8-teste'" badging.txt
-          grep -q "^application-label:'Assistente Local v0.8 (teste)'" badging.txt
+          echo "OK: applicationId br.local.assistente.v08, versionCode 8, versionName 0.8-teste"
           ! grep -q "name='br.local.assistente' " badging.txt
-          echo "pacote, versao e rotulo conferem"
+          echo "OK: o pacote antigo br.local.assistente nao e o applicationId"
+          # Cada elemento do manifesto e lido junto com seus atributos. O rotulo precisa estar
+          # no no <application> e no <service> cujo nome e br.local.assistente.VipListener.
+          awk '
+            function fecha() {
+              if (nome == "application") {
+                app_visto = 1
+                if (rotulo) app_ok = 1
+              }
+              if (nome == "service" && vip) {
+                vip_visto = 1
+                if (rotulo) vip_ok = 1
+              }
+            }
+            /^[ \t]*E: / { fecha(); nome = $2; rotulo = 0; vip = 0; next }
+            /^[ \t]*A: / {
+              if (index($0, ":label") > 0 && index($0, "\"Assistente Local v0.8 (teste)\"") > 0) rotulo = 1
+              if (index($0, "\"br.local.assistente.VipListener\"") > 0) vip = 1
+            }
+            END {
+              fecha()
+              print "no application encontrado: " (app_visto ? "sim" : "nao")
+              print "rotulo no application: " (app_ok ? "OK" : "FALHOU")
+              print "servico VipListener encontrado: " (vip_visto ? "sim" : "nao")
+              print "rotulo no VipListener: " (vip_ok ? "OK" : "FALHOU")
+              exit (app_ok && vip_ok) ? 0 : 1
+            }
+          ' manifesto.txt
+          echo "pacote, versao e rotulos conferem"
 
       - name: Disponibilizar o APK como artefato (1 dia)
         uses: actions/upload-artifact@v4
