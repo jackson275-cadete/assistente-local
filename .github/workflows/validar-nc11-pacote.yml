@@ -92,8 +92,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd work/AssistenteLocal
-          sha256sum -c ../../validation/Pessoal_manifest.sha256
+          cd work
+          sha256sum -c ../validation/Pessoal_manifest.sha256
+          cd AssistenteLocal
           test "$(grep -c '^[[:space:]]*@Test' app/src/test/java/br/local/assistente/NucleoMemoriaTest.kt)" -eq 36
           test "$(grep -c '^[[:space:]]*@Test' app/src/test/java/br/local/assistente/HistoricoArquivoTest.kt)" -eq 7
           test "$(grep -c '^[[:space:]]*@Test' app/src/test/java/br/local/assistente/PersistenciaMonitorTest.kt)" -eq 6
