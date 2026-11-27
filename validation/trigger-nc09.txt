@@ -1,1 +1,2 @@
 Disparador de validação isolada NC-09.
+reexecução após ajuste de verificação.
