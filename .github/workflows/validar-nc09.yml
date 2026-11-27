@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/validar-nc09.yml"
       - "validation/NC09_EtapaD.diff"
+      - "validation/trigger-nc09.txt"
   workflow_dispatch:
 
 permissions:
