@@ -132,6 +132,7 @@ jobs:
                   info.external_attr = ((0o40755 << 16) | 0x10) if is_dir else (0o100644 << 16)
                   z.writestr(info, b"" if is_dir else p.read_bytes())
           PY
+          sha256sum ../AssistenteLocal_pessoal_NC01-10_rascunho.zip
           echo "1e52911d38a067bf66935a1324fb72da65b8f8ff90d2a8a7a55cdcf45d17e4a3  ../AssistenteLocal_pessoal_NC01-10_rascunho.zip" | sha256sum -c -
           unzip -t ../AssistenteLocal_pessoal_NC01-10_rascunho.zip
 
