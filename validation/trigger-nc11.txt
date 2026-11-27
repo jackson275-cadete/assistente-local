@@ -3,3 +3,4 @@ ZIP determinístico Python.
 Imprimir hash ZIP para diagnóstico.
 Validar build sem hash de metadados ZIP.
 Verificar APK release com aapt2.
+Conferência aapt2 com cancelamento de duplicatas antigas.
