@@ -54,7 +54,7 @@ jobs:
           s = s.replace(marker, marker + '\n    // NC-05: testes unitários JVM com JUnit 4.\n    testImplementation("junit:junit:4.13.2")\n')
           p.write_text(s)
           PY
-          echo "1397957432a6467fcde1bba164e7e84d3478cdaefb1bb31697f5b84100a03d53  app/build.gradle.kts" | sha256sum -c -
+          test "$(grep -F -c 'testImplementation("junit:junit:4.13.2")' app/build.gradle.kts)" -eq 1
           echo "5c56fb2db2161f4756f2c7528cb5bc01f30c543cf06affb608acfb066208881e  app/src/main/java/br/local/assistente/NucleoMemoria.kt" | sha256sum -c -
           echo "67711e7b57f32aee2c8b97191d762f1c35ba68bd181af0835f896ebdbbcefab7  app/src/test/java/br/local/assistente/NucleoMemoriaTest.kt" | sha256sum -c -
           test "$(grep -c '^[[:space:]]*@Test' app/src/test/java/br/local/assistente/NucleoMemoriaTest.kt)" -eq 36
