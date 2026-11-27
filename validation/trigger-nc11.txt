@@ -1,3 +1,4 @@
 Disparar validação isolada do pacote pessoal sem Secrets.
 ZIP determinístico Python.
 Imprimir hash ZIP para diagnóstico.
+Validar build sem hash de metadados ZIP.
