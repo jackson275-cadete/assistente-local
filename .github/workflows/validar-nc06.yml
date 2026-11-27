@@ -67,7 +67,7 @@ jobs:
           echo "c7874e0f3afc65f7e40624fa60278f8e7ac8243e26e38bdbc8ac29afc17965b2  app/src/main/java/br/local/assistente/Historico.kt" | sha256sum -c -
           echo "d51ea7bf863c5f32ac995cd551b174faadcf57872645f0971a19e9446f07b4f1  app/src/main/java/br/local/assistente/MainActivity.kt" | sha256sum -c -
           echo "7ecfcba243e12ce21a57e7d585c2158808c75b69f5537e83a6349b7f76a60fab  app/src/test/java/br/local/assistente/HistoricoArquivoTest.kt" | sha256sum -c -
-          echo "dcb71a4d2a7ebe4eb7dc5b8dbb3c8b9708006b4a1a9777f9013368a1d2a1ff91  app/build.gradle.kts" | sha256sum -c -
+          echo "dcb71a4d2a7ebe4eb7dc5b8dbb3b8c9708006b4a1a9777f9013368a1d2a1ff91  app/build.gradle.kts" | sha256sum -c -
           test "$(grep -c '^[[:space:]]*@Test' app/src/test/java/br/local/assistente/HistoricoArquivoTest.kt)" -eq 7
           test "$(grep -c '^[[:space:]]*@Test' app/src/test/java/br/local/assistente/NucleoMemoriaTest.kt)" -eq 36
 
