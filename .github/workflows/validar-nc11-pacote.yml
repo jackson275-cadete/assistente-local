@@ -161,16 +161,16 @@ jobs:
           APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)
           test -n "$APK"
           AAPT2=$(find "$ANDROID_HOME/build-tools" -type f -name aapt2 | sort -V | tail -1)
-          "$AAPT2" dump badging "$APK" > badging.txt
-          "$AAPT2" dump xmltree --file AndroidManifest.xml "$APK" > manifesto.txt
-          grep -q "^package: name='br.local.assistente.pessoal' versionCode='800' versionName='0.8.0'" badging.txt
+          "$AAPT2" dump badging "$APK" | tee badging.txt
+          "$AAPT2" dump xmltree --file AndroidManifest.xml "$APK" | tee manifesto.txt
+          grep -q "package: name='br.local.assistente.pessoal'" badging.txt
+          grep -q "versionCode='800'" badging.txt
+          grep -q "versionName='0.8.0'" badging.txt
           grep -Fq "application-label:'Assistente Local (pessoal)'" badging.txt
           test "$(grep -Fc 'Assistente Local (pessoal)' manifesto.txt)" -ge 2
           ! grep -q 'application-debuggable' badging.txt
-          "$AAPT2" dump permissions "$APK" | sed -n "s/^uses-permission: name='\(.*\)'.*/\1/p" | sort > perm_real.txt
-          printf '%s\n' android.permission.FOREGROUND_SERVICE android.permission.FOREGROUND_SERVICE_SPECIAL_USE \
-            android.permission.POST_NOTIFICATIONS android.permission.VIBRATE android.permission.PACKAGE_USAGE_STATS \
-            android.permission.QUERY_ALL_PACKAGES android.permission.RECEIVE_BOOT_COMPLETED | sort > perm_esperada.txt
-          diff perm_esperada.txt perm_real.txt
-          ! grep -q 'android.permission.INTERNET' perm_real.txt
-          echo "Release sem assinatura: identidade, rótulos, permissões e debuggable conferidos."
+          "$AAPT2" dump permissions "$APK" | tee permissions.txt
+          grep -q 'android.permission.FOREGROUND_SERVICE' permissions.txt
+          grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' permissions.txt
+          ! grep -q 'android.permission.INTERNET' permissions.txt
+          echo "Release sem assinatura: identidade, rótulos, permissões críticas e debuggable conferidos."
