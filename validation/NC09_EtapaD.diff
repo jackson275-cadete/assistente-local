@@ -79,8 +79,8 @@
 +        agora: Long,
 +        vezes: Int
 +    ): Boolean {
-+        if (!salvar("ult_\$id", agora.toString())) return false
-+        if (!salvar("n_\$id", (vezes + 1).toString())) return false
++        if (!salvar("ult_$id", agora.toString())) return false
++        if (!salvar("n_$id", (vezes + 1).toString())) return false
 +        return true
 +    }
 +
