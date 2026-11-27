@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: nc11-pacote-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   validar-pacote:
