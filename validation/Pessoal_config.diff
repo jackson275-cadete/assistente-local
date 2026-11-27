@@ -1,0 +1,88 @@
+--- a/AssistenteLocal/README.md
++++ b/AssistenteLocal/README.md
+@@ -37,3 +37,12 @@
+ ## Se der erro ao compilar
+ 
+ Copie a mensagem de erro e me envie. Este código foi escrito sem poder compilar no ambiente em que foi criado, então pequenos ajustes na primeira execução são esperados.
++
++
++## Identidade do pacote pessoal
++
++- \`applicationId\`: \`br.local.assistente.pessoal\`
++- \`versionCode\`: \`800\`
++- \`versionName\`: \`0.8.0\`
++- \`debuggable\`: falso no tipo \`release\` (padrão do Android Gradle Plugin)
++- Assinatura permanente: somente via variáveis temporárias do workflow protegido; nenhuma chave fica no projeto.
+--- a/AssistenteLocal/app/build.gradle.kts
++++ b/AssistenteLocal/app/build.gradle.kts
+@@ -8,28 +8,39 @@
+     compileSdk = 34
+ 
+     defaultConfig {
+-        // Id exclusivo da versão de teste: instala ao lado da v0.7 (br.local.assistente).
+-        // O namespace acima continua igual, então o código não muda.
+-        applicationId = "br.local.assistente.v08"
++        // Identidade pessoal: instala ao lado da v0.7 e da versão de teste v0.8.
++        // O namespace permanece br.local.assistente para preservar os nomes do código.
++        applicationId = "br.local.assistente.pessoal"
+         minSdk = 26
+         targetSdk = 34
+-        versionCode = 8
+-        versionName = "0.8-teste"
++        versionCode = 800
++        versionName = "0.8.0"
+     }
+ 
+-    // Chave fixa de teste: assim cada compilação nova instala por cima da anterior.
+-    signingConfigs {
+-        getByName("debug") {
+-            storeFile = file("debug.keystore")
+-            storePassword = "android"
+-            keyAlias = "androiddebugkey"
+-            keyPassword = "android"
++    // A chave só existe no runner temporário do workflow de assinatura.
++    // Sem as quatro variáveis, o release é compilável sem assinatura para validação.
++    val signingFile = System.getenv("SIGNING_KEYSTORE_FILE")
++    val signingStorePassword = System.getenv("SIGNING_STORE_PASSWORD")
++    val signingAlias = System.getenv("SIGNING_KEY_ALIAS")
++    val signingKeyPassword = System.getenv("SIGNING_KEY_PASSWORD")
++    val signingReady = listOf(signingFile, signingStorePassword, signingAlias, signingKeyPassword)
++        .all { !it.isNullOrBlank() }
++
++    if (signingReady) {
++        signingConfigs {
++            create("permanentRelease") {
++                storeFile = file(signingFile!!)
++                storePassword = signingStorePassword!!
++                keyAlias = signingAlias!!
++                keyPassword = signingKeyPassword!!
++            }
+         }
+     }
+ 
+     buildTypes {
+         release {
+             isMinifyEnabled = false
++            if (signingReady) signingConfig = signingConfigs.getByName("permanentRelease")
+         }
+     }
+ 
+--- a/AssistenteLocal/app/src/main/AndroidManifest.xml
++++ b/AssistenteLocal/app/src/main/AndroidManifest.xml
+@@ -20,7 +20,7 @@
+     <application
+         android:allowBackup="false"
+         android:icon="@android:drawable/sym_def_app_icon"
+-        android:label="Assistente Local v0.8 (teste)"
++        android:label="Assistente Local (pessoal)"
+         android:theme="@android:style/Theme.Material.Light.NoActionBar">
+ 
+         <activity
+@@ -53,7 +53,7 @@
+         <service
+             android:name=".VipListener"
+             android:exported="true"
+-            android:label="Assistente Local v0.8 (teste)"
++            android:label="Assistente Local (pessoal)"
+             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+         
