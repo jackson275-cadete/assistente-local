@@ -1,0 +1,1 @@
+NC-05 validation retry after normalizing patch endings and checking dependency declaration.
