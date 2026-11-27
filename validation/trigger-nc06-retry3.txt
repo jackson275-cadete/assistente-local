@@ -1,0 +1,1 @@
+Quarto disparo controlado após correção do hash Gradle.
