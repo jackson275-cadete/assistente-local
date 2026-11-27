@@ -112,11 +112,27 @@ jobs:
         run: |
           set -euo pipefail
           cd work
-          find AssistenteLocal -type f -exec chmod 0644 {} +
-          find AssistenteLocal -type d -exec chmod 0755 {} +
-          find AssistenteLocal -exec touch -t 202601010000.00 {} +
-          find AssistenteLocal -print | LC_ALL=C sort | zip -X -0 -q ../AssistenteLocal_pessoal_NC01-10_rascunho.zip -@
-          echo "aed39e1738082cf90660b01a5e95ac4d79cbfd175770354b85c5d31a7d6540f2  ../AssistenteLocal_pessoal_NC01-10_rascunho.zip" | sha256sum -c -
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile, ZipInfo, ZIP_STORED
+          root = Path("AssistenteLocal")
+          out = Path("../AssistenteLocal_pessoal_NC01-10_rascunho.zip")
+          paths = [root] + sorted(root.rglob("*"), key=lambda p: p.relative_to(root.parent).as_posix())
+          with ZipFile(out, "w", compression=ZIP_STORED, strict_timestamps=True) as z:
+              for p in paths:
+                  name = p.relative_to(root.parent).as_posix()
+                  is_dir = p.is_dir()
+                  if is_dir:
+                      name += "/"
+                  info = ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
+                  info.create_system = 3
+                  info.compress_type = ZIP_STORED
+                  info.extra = b""
+                  info.comment = b""
+                  info.external_attr = ((0o40755 << 16) | 0x10) if is_dir else (0o100644 << 16)
+                  z.writestr(info, b"" if is_dir else p.read_bytes())
+          PY
+          echo "1e52911d38a067bf66935a1324fb72da65b8f8ff90d2a8a7a55cdcf45d17e4a3  ../AssistenteLocal_pessoal_NC01-10_rascunho.zip" | sha256sum -c -
           unzip -t ../AssistenteLocal_pessoal_NC01-10_rascunho.zip
 
       - name: Configurar Java 17
