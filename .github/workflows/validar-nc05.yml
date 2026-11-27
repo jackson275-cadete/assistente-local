@@ -1,0 +1,77 @@
+name: NC-05 - Validar testes JVM da memória
+
+on:
+  push:
+    branches: [validacao-nc05]
+    paths:
+      - ".github/workflows/validar-nc05.yml"
+      - "validation/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nc05-validacao-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test-jvm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout da branch isolada
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Conferir pacote original e patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "871d37325be9b4aeb31384c7c7f1a00420f1b5d338b33030fffde1bfd77c3c9c  AssistenteLocal_v0.8_isolada.zip" | sha256sum -c -
+          echo "d4407329f4bea7a2ce5c193b1d2163b51a5b20f41cf116b9f29102047800b4f8  validation/EtapaA_NucleoMemoria_final.diff" | sha256sum -c -
+          echo "fe4afee4078bfd1472fad912971725cb569ae1ffee55643448fb016b58eb2e01  validation/EtapaA_NucleoMemoriaTest_final.diff" | sha256sum -c -
+
+      - name: Preparar cópia temporária da Etapa A
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work
+          unzip -q AssistenteLocal_v0.8_isolada.zip -d work
+          patch --batch --forward -p1 -d work/AssistenteLocal < validation/EtapaA_NucleoMemoria_final.diff
+          patch --batch --forward -p1 -d work/AssistenteLocal < validation/EtapaA_NucleoMemoriaTest_final.diff
+
+      - name: Integrar dependência JUnit 4 e validar hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd work/AssistenteLocal
+          echo "8ca6084b9c950d938240088f31b1fbc5605b0b90890d937e9e3c73e8c6647db9  app/build.gradle.kts" | sha256sum -c -
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("app/build.gradle.kts")
+          s = p.read_text()
+          marker = '    implementation("androidx.security:security-crypto:1.1.0-alpha06")\n'
+          if s.count(marker) != 1:
+              raise SystemExit("Dependência-base inesperada; abortando sem alterar")
+          s = s.replace(marker, marker + '\n    // NC-05: testes unitários JVM com JUnit 4.\n    testImplementation("junit:junit:4.13.2")\n')
+          p.write_text(s)
+          PY
+          echo "1397957432a6467fcde1bba164e7e84d3478cdaefb1bb31697f5b84100a03d53  app/build.gradle.kts" | sha256sum -c -
+          echo "5c56fb2db2161f4756f2c7528cb5bc01f30c543cf06affb608acfb066208881e  app/src/main/java/br/local/assistente/NucleoMemoria.kt" | sha256sum -c -
+          echo "67711e7b57f32aee2c8b97191d762f1c35ba68bd181af0835f896ebdbbcefab7  app/src/test/java/br/local/assistente/NucleoMemoriaTest.kt" | sha256sum -c -
+          test "$(grep -c '^[[:space:]]*@Test' app/src/test/java/br/local/assistente/NucleoMemoriaTest.kt)" -eq 36
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v4.2.2
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configurar Gradle 8.7
+        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+        with:
+          gradle-version: "8.7"
+
+      - name: Executar testes unitários reais do Gradle
+        working-directory: work/AssistenteLocal
+        run: gradle testDebugUnitTest --no-daemon --stacktrace
