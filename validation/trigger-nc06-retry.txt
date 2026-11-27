@@ -1,0 +1,1 @@
+Segundo disparo controlado após corrigir newline do patch.
