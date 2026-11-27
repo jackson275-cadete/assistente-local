@@ -1,0 +1,243 @@
+--- original/app/src/test/java/br/local/assistente/NucleoMemoriaTest.kt
++++ EtapaA/app/src/test/java/br/local/assistente/NucleoMemoriaTest.kt
+@@ -16,10 +16,9 @@
+ /*
+  * Testes das regras da memória (NucleoMemoria), sem Android.
+  *
+- * Observação: estes testes ainda NÃO estão ligados ao Gradle (o build.gradle.kts não declara
+- * JUnit) e, por isso, não rodam na compilação do GitHub. Foram executados à parte, com o
+- * compilador Kotlin e o JUnit 4 disponíveis no ambiente de desenvolvimento.
+- * Eles não substituem o teste no aparelho, onde entra a criptografia real.
++ * Estes testes exercitam o núcleo sem Android. A integração com Gradle ainda é tratada
++ * separadamente na NC-05; executar este arquivo fora do Gradle não substitui essa integração
++ * nem os testes no aparelho, onde entra a criptografia real.
+  */
+ 
+ /** Armazém em memória simples, com contadores para provar que nada foi gravado ou removido. */
+@@ -59,17 +58,37 @@
+     var criptoFalhaAoLimpar = false
+     var criptoFalhaAoListar = false
+     var gravaMasNaoPersiste = false
++    var falhaGravarUmaVez = false
++    private var falhaGravarJaOcorreu = false
++    var gravacoes = 0
+     var remocoes = 0
++    var limpezas = 0
++    var leituras = 0
++    var listagens = 0
++    val falhasLeituraNasChamadas = mutableSetOf<Int>()
++    val falhasListagemNasChamadas = mutableSetOf<Int>()
++    var falhaLimparUmaVez = false
++    private var falhaLimparJaOcorreu = false
+ 
+     override fun ler(chave: String): String? {
++        leituras++
++        if (leituras in falhasLeituraNasChamadas) {
++            falhasLeituraNasChamadas.remove(leituras)
++            throw FalhaArmazem(true, "Falha pontual ao decifrar um valor (simulada)")
++        }
+         if (criptoFalhaAoLer) throw FalhaArmazem(true, "Falha ao decifrar um valor (simulada)")
+         return memoria[chave]
+     }
+ 
+     override fun gravar(chave: String, valor: String): Boolean {
++        gravacoes++
+         if (criptoFalhaAoGravar) throw FalhaArmazem(true, "Falha ao cifrar um valor (simulada)")
+         if (gravaMasNaoPersiste) return true
+         memoria[chave] = valor
++        if (falhaGravarUmaVez && !falhaGravarJaOcorreu) {
++            falhaGravarJaOcorreu = true
++            return false
++        }
+         if (discoFalha) return false
+         disco[chave] = valor
+         return true
+@@ -84,14 +103,24 @@
+     }
+ 
+     override fun limpar(): Boolean {
++        limpezas++
+         if (criptoFalhaAoLimpar) throw FalhaArmazem(true, "Falha de criptografia ao apagar (simulada)")
+         memoria.clear()
++        if (falhaLimparUmaVez && !falhaLimparJaOcorreu) {
++            falhaLimparJaOcorreu = true
++            return false
++        }
+         if (discoFalha) return false
+         disco.clear()
+         return true
+     }
+ 
+     override fun todos(): Map<String, String> {
++        listagens++
++        if (listagens in falhasListagemNasChamadas) {
++            falhasListagemNasChamadas.remove(listagens)
++            throw FalhaArmazem(true, "Falha pontual ao listar a memória (simulada)")
++        }
+         if (criptoFalhaAoListar) throw FalhaArmazem(true, "Falha ao decifrar a memória (simulada)")
+         return HashMap(memoria)
+     }
+@@ -409,7 +438,7 @@
+         s.discoFalha = true
+         val r = n.salvar("nome", "João")
+ 
+-        assertEquals(ResultadoGravacao.FALHA_GRAVACAO, r)
++        assertEquals(ResultadoGravacao.FALHA_RECUPERACAO, r)
+         assertFalse(n.salvar("nome", "Pedro").ok)
+         assertEquals("Maria", s.memoria["nome"])
+         assertEquals("Maria", s.disco["nome"])
+@@ -419,11 +448,24 @@
+     }
+ 
+     @Test
++    fun falhaPontualDeGravacaoRestauraEConfirmaOValorAnterior() {
++        val s = ArmazemSimulaPrefs()
++        val n = NucleoMemoria(s)
++        assertEquals(ResultadoGravacao.GRAVADO, n.salvar("nome", "Maria"))
++        s.falhaGravarUmaVez = true
++
++        assertEquals(ResultadoGravacao.FALHA_GRAVACAO, n.salvar("nome", "João"))
++        assertEquals("Maria", s.memoria["nome"])
++        assertEquals("Maria", s.disco["nome"])
++        assertEquals("Maria", s.reiniciar().ler("nome"))
++    }
++
++    @Test
+     fun falhaDeDiscoEmChaveNovaNaoDeixaRastro() {
+         val s = ArmazemSimulaPrefs()
+         val n = NucleoMemoria(s)
+         s.discoFalha = true
+-        assertEquals(ResultadoGravacao.FALHA_GRAVACAO, n.salvar("nome", "Maria"))
++        assertEquals(ResultadoGravacao.FALHA_RECUPERACAO, n.salvar("nome", "Maria"))
+         assertFalse(s.memoria.containsKey("nome"))
+         assertFalse(s.disco.containsKey("nome"))
+         assertEquals("", n.texto("nome"))
+@@ -447,7 +489,7 @@
+         val n = NucleoMemoria(s)
+         n.salvar("nome", "Maria")
+         s.criptoFalhaAoGravar = true
+-        assertEquals(ResultadoGravacao.FALHA_CRIPTOGRAFIA, n.salvar("nome", "João"))
++        assertEquals(ResultadoGravacao.FALHA_RECUPERACAO, n.salvar("nome", "João"))
+         s.criptoFalhaAoGravar = false
+         assertEquals("Maria", n.texto("nome"))
+         assertEquals("Maria", s.reiniciar().ler("nome"))
+@@ -469,14 +511,47 @@
+     }
+ 
+     @Test
+-    fun valorAnteriorIlegivelNaoEApagadoNemSubstituidoNoDesfazer() {
+-        val s = ArmazemSimulaPrefs()
+-        val n = NucleoMemoria(s)
+-        n.salvar("nome", "Maria")
+-        s.criptoFalhaAoLer = true // não dá para ler o anterior nem reler depois de gravar
++    fun valorAnteriorIlegivelImpedeQualquerGravacaoENaoSubstituiOOriginal() {
++        val s = ArmazemSimulaPrefs()
++        val n = NucleoMemoria(s)
++        assertEquals(ResultadoGravacao.GRAVADO, n.salvar("nome", "Maria"))
++        val gravacoesAntes = s.gravacoes
++        val memoriaAntes = HashMap(s.memoria)
++        val discoAntes = HashMap(s.disco)
++
++        s.criptoFalhaAoLer = true
+         val r = n.salvar("nome", "João")
++
+         assertEquals(ResultadoGravacao.FALHA_CRIPTOGRAFIA, r)
+-        assertEquals(0, s.remocoes) // nada foi removido às cegas
++        assertEquals(gravacoesAntes, s.gravacoes)
++        assertEquals(memoriaAntes, s.memoria)
++        assertEquals(discoAntes, s.disco)
++        assertEquals("Maria", s.reiniciar().ler("nome"))
++        assertEquals(0, s.remocoes)
++    }
++
++    @Test
++    fun falhaNaReleituraDepoisDaGravacaoRestauraEVerificaOAnterior() {
++        val s = ArmazemSimulaPrefs()
++        val n = NucleoMemoria(s)
++        assertEquals(ResultadoGravacao.GRAVADO, n.salvar("nome", "Maria"))
++        s.leituras = 0
++        s.falhasLeituraNasChamadas.add(2) // falha na verificação pós-gravação; rollback pode reler
++        assertEquals(ResultadoGravacao.FALHA_CRIPTOGRAFIA, n.salvar("nome", "João"))
++        assertEquals("Maria", s.memoria["nome"])
++        assertEquals("Maria", s.disco["nome"])
++        assertEquals("Maria", s.reiniciar().ler("nome"))
++    }
++
++    @Test
++    fun falhaAoVerificarRollbackRetornaIntegridadeIncerta() {
++        val s = ArmazemSimulaPrefs()
++        val n = NucleoMemoria(s)
++        assertEquals(ResultadoGravacao.GRAVADO, n.salvar("nome", "Maria"))
++        s.leituras = 0
++        s.falhasLeituraNasChamadas.addAll(listOf(2, 3))
++        assertEquals(ResultadoGravacao.FALHA_RECUPERACAO, n.salvar("nome", "João"))
++        assertTrue(n.ultimoErro?.contains("Falha pontual") == true)
+     }
+ 
+     @Test
+@@ -528,7 +603,7 @@
+         n.salvar("vip_nomes", "João, Ana")
+         val antes = HashMap(s.disco)
+ 
+-        s.discoFalha = true
++        s.falhaLimparUmaVez = true
+         assertEquals(ResultadoGravacao.FALHA_GRAVACAO, n.esquecerTudo())
+ 
+         assertEquals(antes, HashMap(s.memoria))
+@@ -542,9 +617,55 @@
+         val n = NucleoMemoria(s)
+         n.salvar("nome", "Maria")
+         s.criptoFalhaAoLimpar = true
+-        assertEquals(ResultadoGravacao.FALHA_CRIPTOGRAFIA, n.esquecerTudo())
++        assertEquals(ResultadoGravacao.FALHA_RECUPERACAO, n.esquecerTudo())
+         assertEquals("Maria", n.texto("nome"))
+         assertEquals("Maria", s.disco["nome"])
++    }
++
++    @Test
++    fun falhaAoCriarCopiaImpedeLimpeza() {
++        val s = ArmazemSimulaPrefs()
++        val n = NucleoMemoria(s)
++        n.salvar("nome", "Maria")
++        n.salvar("vip_nomes", "João")
++        val memoriaAntes = HashMap(s.memoria)
++        val discoAntes = HashMap(s.disco)
++        val limpezasAntes = s.limpezas
++        s.criptoFalhaAoListar = true
++
++        assertEquals(ResultadoGravacao.FALHA_CRIPTOGRAFIA, n.esquecerTudo())
++        assertEquals(limpezasAntes, s.limpezas)
++        assertEquals(memoriaAntes, s.memoria)
++        assertEquals(discoAntes, s.disco)
++    }
++
++    @Test
++    fun falhaPontualNaVerificacaoPosLimpezaDisparaRestauracaoCompleta() {
++        val s = ArmazemSimulaPrefs()
++        val n = NucleoMemoria(s)
++        n.salvar("nome", "Maria")
++        n.salvar("vip_nomes", "João")
++        val antes = HashMap(s.memoria)
++        s.listagens = 0
++        s.falhasListagemNasChamadas.add(2) // snapshot passa; leitura depois da limpeza falha
++
++        assertEquals(ResultadoGravacao.FALHA_CRIPTOGRAFIA, n.esquecerTudo())
++        assertEquals(antes, s.memoria)
++        assertEquals(antes, s.disco)
++        assertEquals(antes, s.reiniciar().todos())
++    }
++
++    @Test
++    fun falhaNaVerificacaoDaRestauracaoRetornaIntegridadeIncerta() {
++        val s = ArmazemSimulaPrefs()
++        val n = NucleoMemoria(s)
++        n.salvar("nome", "Maria")
++        n.salvar("vip_nomes", "João")
++        s.listagens = 0
++        s.falhasListagemNasChamadas.addAll(listOf(2, 3))
++
++        assertEquals(ResultadoGravacao.FALHA_RECUPERACAO, n.esquecerTudo())
++        assertTrue(n.ultimoErro?.contains("Falha pontual") == true)
+     }
+ 
+     // ---------- 8. Persistência: nova instância e outro processo ----------
