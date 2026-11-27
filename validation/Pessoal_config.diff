@@ -8,10 +8,10 @@
 +
 +## Identidade do pacote pessoal
 +
-+- \`applicationId\`: \`br.local.assistente.pessoal\`
-+- \`versionCode\`: \`800\`
-+- \`versionName\`: \`0.8.0\`
-+- \`debuggable\`: falso no tipo \`release\` (padrão do Android Gradle Plugin)
++- `applicationId`: `br.local.assistente.pessoal`
++- `versionCode`: `800`
++- `versionName`: `0.8.0`
++- `debuggable`: falso no tipo `release` (padrão do Android Gradle Plugin)
 +- Assinatura permanente: somente via variáveis temporárias do workflow protegido; nenhuma chave fica no projeto.
 --- a/AssistenteLocal/app/build.gradle.kts
 +++ b/AssistenteLocal/app/build.gradle.kts
