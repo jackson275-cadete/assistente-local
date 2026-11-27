@@ -1,1 +1,2 @@
 Disparar validação isolada do pacote pessoal sem Secrets.
+ZIP determinístico Python.
