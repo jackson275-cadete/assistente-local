@@ -23,13 +23,13 @@
  
          resumoDaManha(e, tratamento, podeFalar)
 @@ -149,8 +153,10 @@
-             val ultimo = mem.longo("ult_\${r.id}")
+             val ultimo = mem.longo("ult_${r.id}")
              if (agora - ultimo < espera) continue
  
--            mem.salvar("ult_\${r.id}", agora.toString())
--            mem.salvar("n_\${r.id}", (vezes + 1).toString())
+-            mem.salvar("ult_${r.id}", agora.toString())
+-            mem.salvar("n_${r.id}", (vezes + 1).toString())
 +            if (!PersistenciaMonitor.liberarAviso(mem::salvar, r.id, agora, vezes)) {
-+                Log.w(TAG, "Aviso \${r.id} suprimido: persistência não confirmada")
++                Log.w(TAG, "Aviso ${r.id} suprimido: persistência não confirmada")
 +                continue
 +            }
              avisar(r.id, r.fala, podeFalar, r.importante)
@@ -44,8 +44,8 @@
 +            Log.w(TAG, "Resumo diário suprimido: data não persistida")
 +            return
 +        }
-         val texto = "Bom dia$tratamento. A bateria está em \${e.bateria} por cento e há " +
-             "\${"%.0f".format(e.armLivreGb)} gigas livres no armazenamento."
+         val texto = "Bom dia$tratamento. A bateria está em ${e.bateria} por cento e há " +
+             "${"%.0f".format(e.armLivreGb)} gigas livres no armazenamento."
          avisar("resumo", texto, true)
 @@ -209,6 +218,7 @@
      }
