@@ -1,0 +1,10 @@
+--- a/AssistenteLocal/MEMORIA_METODOS.md
++++ b/AssistenteLocal/MEMORIA_METODOS.md
+@@ -63,7 +63,7 @@
+ ## Interface (MainActivity)
+ - "Salvar": confere cada campo; mostra "Salvo" só se todos foram gravados; senão lista as falhas.
+ - Voz, "Iniciar/Parar assistente": avisam se o estado não foi guardado.
+-- "Ver memória": mostra o erro de leitura, não "nada guardado".
++- "Ver o que ele lembra": mostra o erro de leitura, não "nada guardado".
+ - "Esquecer tudo": só apaga histórico e recria a tela se a memória foi apagada de fato.
+ - Aviso ao abrir o app se a memória estiver indisponível.
