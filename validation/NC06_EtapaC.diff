@@ -1,0 +1,293 @@
+--- a/app/src/main/java/br/local/assistente/MainActivity.kt
++++ b/app/src/main/java/br/local/assistente/MainActivity.kt
+@@ -443,8 +443,16 @@
+             .setPositiveButton("Apagar") { _, _ ->
+                 val r = mem.esquecerTudo()
+                 if (r.ok) {
+-                    Historico.apagar(this)
+-                    recreate()
++                    val historicoApagado = Historico.apagar(this)
++                    if (historicoApagado) {
++                        recreate()
++                    } else {
++                        AlertDialog.Builder(this)
++                            .setTitle("Memória apagada parcialmente")
++                            .setMessage("Os dados da memória foram apagados, mas não consegui confirmar a exclusão do histórico local. Tente novamente após reabrir o aplicativo.")
++                            .setPositiveButton("Fechar") { _, _ -> recreate() }
++                            .show()
++                    }
+                 } else {
+                     AlertDialog.Builder(this)
+                         .setTitle("Não apaguei")
+--- a/app/src/main/java/br/local/assistente/Historico.kt
++++ b/app/src/main/java/br/local/assistente/Historico.kt
+@@ -2,86 +2,119 @@
+ 
+ import android.content.Context
+ import java.io.File
++import java.io.FileOutputStream
+ import java.text.SimpleDateFormat
+ import java.util.Date
+ import java.util.Locale
+ 
+-/**
+- * Registro simples de bateria e armazenamento, guardado só no aparelho.
+- * Uma linha a cada 15 minutos, com limite de tamanho.
+- */
++/** Adaptador Android fino: o núcleo de arquivo abaixo pode ser testado em JVM sem Context. */
+ object Historico {
++    private fun store(ctx: Context) = HistoricoArquivo(ctx.filesDir)
+ 
+-    private const val ARQUIVO = "historico.csv"
+-    private const val MAX_LINHAS = 2000
++    fun registrar(ctx: Context, e: Estado, agora: Long): Boolean =
++        store(ctx).registrar(agora, e.bateria, e.armLivreGb, e.ramLivreMb, e.tempC)
+ 
+-    private fun arquivo(ctx: Context): File = File(ctx.filesDir, ARQUIVO)
++    fun ultimos(ctx: Context, quantas: Int): List<String> = store(ctx).ultimos(quantas)
+ 
+-    fun registrar(ctx: Context, e: Estado, agora: Long) {
++    fun quedaNaUltimaHora(ctx: Context, agora: Long, bateriaAtual: Int): Int =
++        store(ctx).quedaNaUltimaHora(agora, bateriaAtual)
++
++    fun apagar(ctx: Context): Boolean = store(ctx).apagar()
++}
++
++/** Núcleo JVM do histórico. Operações entre instâncias do processo são serializadas. */
++internal class HistoricoArquivo(private val diretorio: File) {
++    private val trava = LOCK
++    private val arquivo get() = File(diretorio, ARQUIVO)
++    private val temporario get() = File(diretorio, TEMPORARIO)
++
++    fun registrar(agora: Long, bateria: Int, armLivreGb: Float, ramLivreMb: Long, tempC: Float): Boolean = synchronized(trava) {
+         try {
+-            val f = arquivo(ctx)
+-            f.appendText("$agora,${e.bateria},${e.armLivreGb},${e.ramLivreMb},${e.tempC}\n")
+-            if (f.length() > 200_000) {
+-                val linhas = f.readLines().takeLast(MAX_LINHAS)
+-                f.writeText(linhas.joinToString("\n") + "\n")
++            if (bateria !in 0..100 || !armLivreGb.isFinite() || ramLivreMb < 0 || !tempC.isFinite()) return@synchronized false
++            diretorio.mkdirs()
++            FileOutputStream(arquivo, true).use { out ->
++                val linha = "$agora,$bateria,$armLivreGb,$ramLivreMb,$tempC\n"
++                out.write(linha.toByteArray(Charsets.UTF_8))
++                out.flush()
++                out.fd.sync()
+             }
++            if (arquivo.length() > MAX_BYTES) compactar()
++            true
+         } catch (_: Exception) {
+-            // Falha ao registrar não deve afetar o assistente.
++            false
+         }
+     }
+ 
+-    /** Últimos registros, do mais novo para o mais antigo, já em texto. */
+-    fun ultimos(ctx: Context, quantas: Int): List<String> {
+-        return try {
+-            val f = arquivo(ctx)
+-            if (!f.exists()) return emptyList()
++    fun ultimos(quantas: Int): List<String> = synchronized(trava) {
++        if (quantas <= 0) return@synchronized emptyList()
++        try {
++            if (!arquivo.isFile) return@synchronized emptyList()
+             val formato = SimpleDateFormat("dd/MM HH:mm", Locale("pt", "BR"))
+-            val saida = mutableListOf<String>()
+-            for (linha in f.readLines().takeLast(quantas)) {
++            arquivo.readLines(Charsets.UTF_8).takeLast(quantas).mapNotNull { linha ->
+                 val p = linha.split(",")
+-                if (p.size < 5) continue
+-                val hora = formato.format(Date(p[0].toLong()))
+-                val livre = "%.1f".format(p[2].toFloat())
+-                val temp = "%.0f".format(p[4].toFloat())
+-                saida.add("$hora  bateria ${p[1]}%  livre $livre GB  $temp °C")
+-            }
+-            saida.reversed()
+-        } catch (_: Exception) {
+-            emptyList()
+-        }
++                if (p.size != 5) return@mapNotNull null
++                try {
++                    val timestamp = p[0].toLong()
++                    val bateria = p[1].toInt()
++                    val livreGb = p[2].toFloat()
++                    val ramMb = p[3].toLong()
++                    val tempC = p[4].toFloat()
++                    if (bateria !in 0..100 || !livreGb.isFinite() || !tempC.isFinite() || ramMb < 0) return@mapNotNull null
++                    val hora = formato.format(Date(timestamp))
++                    val livre = "%.1f".format(Locale("pt", "BR"), livreGb)
++                    val temp = "%.0f".format(Locale("pt", "BR"), tempC)
++                    "$hora  bateria $bateria%  livre $livre GB  $temp °C"
++                } catch (_: Exception) { null }
++            }.reversed()
++        } catch (_: Exception) { emptyList() }
+     }
+ 
+-    /**
+-     * Quantos pontos percentuais a bateria perdeu na última hora,
+-     * comparando com o registro mais próximo de 60 minutos atrás. Zero se não houver dado.
+-     */
+-    fun quedaNaUltimaHora(ctx: Context, agora: Long, bateriaAtual: Int): Int {
+-        return try {
+-            val f = arquivo(ctx)
+-            if (!f.exists()) return 0
++    fun quedaNaUltimaHora(agora: Long, bateriaAtual: Int): Int = synchronized(trava) {
++        try {
++            if (!arquivo.isFile || bateriaAtual !in 0..100) return@synchronized 0
+             var anterior = -1
+             var menorDif = Long.MAX_VALUE
+-            for (linha in f.readLines().takeLast(30)) {
++            for (linha in arquivo.readLines(Charsets.UTF_8).takeLast(30)) {
+                 val p = linha.split(",")
+-                if (p.size < 2) continue
+-                val idade = agora - p[0].toLong()
++                if (p.size != 5) continue
++                val timestamp = p[0].toLongOrNull() ?: continue
++                val bateria = p[1].toIntOrNull() ?: continue
++                if (bateria !in 0..100) continue
++                val idade = agora - timestamp
+                 if (idade < 45 * 60_000L || idade > 80 * 60_000L) continue
+-                val dif = Math.abs(idade - 60 * 60_000L)
+-                if (dif < menorDif) {
+-                    menorDif = dif
+-                    anterior = p[1].toInt()
+-                }
++                val dif = kotlin.math.abs(idade - 60 * 60_000L)
++                if (dif < menorDif) { menorDif = dif; anterior = bateria }
+             }
+             if (anterior < 0) 0 else (anterior - bateriaAtual).coerceAtLeast(0)
+-        } catch (_: Exception) {
+-            0
+-        }
++        } catch (_: Exception) { 0 }
+     }
+ 
+-    fun apagar(ctx: Context) {
++    fun apagar(): Boolean = synchronized(trava) {
+         try {
+-            arquivo(ctx).delete()
+-        } catch (_: Exception) {
++            if (temporario.exists() && !temporario.delete() && temporario.exists()) return@synchronized false
++            if (!arquivo.exists()) return@synchronized true
++            arquivo.delete() && !arquivo.exists()
++        } catch (_: Exception) { false }
++    }
++
++    private fun compactar() {
++        val linhas = arquivo.readLines(Charsets.UTF_8).takeLast(MAX_LINHAS)
++        FileOutputStream(temporario, false).use { out ->
++            out.write((linhas.joinToString("\n") + if (linhas.isEmpty()) "" else "\n").toByteArray(Charsets.UTF_8))
++            out.flush()
++            out.fd.sync()
++        }
++        if (!temporario.renameTo(arquivo)) {
++            if (!temporario.delete() && temporario.exists()) throw IllegalStateException("Falha ao limpar temporário")
++            throw IllegalStateException("Falha ao substituir histórico compactado")
+         }
+     }
++
++    private companion object {
++        const val ARQUIVO = "historico.csv"
++        const val TEMPORARIO = "historico.csv.tmp"
++        const val MAX_LINHAS = 2000
++        const val MAX_BYTES = 200_000L
++        val LOCK = Any()
++    }
+ }
+--- /dev/null
++++ b/app/src/test/java/br/local/assistente/HistoricoArquivoTest.kt
+@@ -0,0 +1,94 @@
++package br.local.assistente
++
++import org.junit.Assert.assertEquals
++import org.junit.Assert.assertFalse
++import org.junit.Assert.assertTrue
++import org.junit.Rule
++import org.junit.Test
++import org.junit.rules.TemporaryFolder
++import java.io.File
++import java.util.concurrent.CountDownLatch
++import kotlin.concurrent.thread
++
++class HistoricoArquivoTest {
++    @get:Rule val pasta = TemporaryFolder()
++
++    @Test fun appendPersisteEOutraInstanciaLe() {
++        val dir = pasta.newFolder("persistencia")
++        val primeiro = HistoricoArquivo(dir)
++        assertTrue(primeiro.registrar(1_800_000_000_000L, 72, 12.5f, 2048, 36.5f))
++        assertTrue(primeiro.registrar(1_800_000_900_000L, 70, 12.4f, 1980, 37f))
++        val segundo = HistoricoArquivo(dir)
++        assertEquals(2, File(dir, "historico.csv").readLines().size)
++        assertEquals(2, segundo.ultimos(10).size)
++        assertTrue(segundo.ultimos(1).single().contains("bateria 70%"))
++    }
++
++    @Test fun rejeitaMetricasInvalidasSemAcrescentarLinha() {
++        val dir = pasta.newFolder("validacao")
++        val store = HistoricoArquivo(dir)
++        assertFalse(store.registrar(1L, 140, 1f, 100, 30f))
++        assertFalse(store.registrar(1L, 50, Float.NaN, 100, 30f))
++        assertFalse(store.registrar(1L, 50, 1f, -1, 30f))
++        assertTrue(!File(dir, "historico.csv").exists())
++    }
++
++    @Test fun ignoraLinhasCsvMalformadas() {
++        val dir = pasta.newFolder("malformado")
++        File(dir, "historico.csv").writeText(
++            "linha-ruim\n1,150,2.0,300,30.0\n2,50,NaN,300,30.0\n3,60,2.0,300,31.0\n"
++        )
++        val store = HistoricoArquivo(dir)
++        assertEquals(1, store.ultimos(20).size)
++        assertEquals(5, store.quedaNaUltimaHora(3_600_003L, 55))
++    }
++
++    @Test fun compactacaoMantemAsDuasMilUltimasLinhas() {
++        val dir = pasta.newFolder("compactacao")
++        val f = File(dir, "historico.csv")
++        f.writeText((1..12_000).joinToString("\n") { "$it,50,2.0,300,30.0" } + "\n")
++        val store = HistoricoArquivo(dir)
++        assertTrue(store.registrar(20_000L, 49, 2f, 299, 30f))
++        val linhas = f.readLines()
++        assertEquals(2000, linhas.size)
++        assertEquals("10002,50,2.0,300,30.0", linhas.first())
++        assertTrue(linhas.last().startsWith("20000,49,"))
++        assertTrue(f.length() < 200_000L)
++    }
++
++    @Test fun appendConcorrenteNaoPerdeLinhas() {
++        val dir = pasta.newFolder("concorrencia")
++        val inicio = CountDownLatch(1)
++        val threads = (0 until 6).map { grupo ->
++            thread {
++                val store = HistoricoArquivo(dir)
++                inicio.await()
++                repeat(20) { n ->
++                    check(store.registrar((grupo * 100 + n).toLong(), 50, 2f, 300, 30f))
++                }
++            }
++        }
++        inicio.countDown()
++        threads.forEach { it.join() }
++        assertEquals(120, File(dir, "historico.csv").readLines().size)
++    }
++
++    @Test fun exclusaoConfirmaArquivoAusenteETrataAusenciaComoSucesso() {
++        val dir = pasta.newFolder("exclusao")
++        val store = HistoricoArquivo(dir)
++        assertTrue(store.apagar())
++        assertTrue(store.registrar(1L, 50, 2f, 300, 30f))
++        assertTrue(File(dir, "historico.csv").exists())
++        assertTrue(store.apagar())
++        assertFalse(File(dir, "historico.csv").exists())
++        assertTrue(store.apagar())
++    }
++
++    @Test fun arquivoTemporarioObsoletoEhRemovidoNaExclusao() {
++        val dir = pasta.newFolder("temporario")
++        val tmp = File(dir, "historico.csv.tmp")
++        tmp.writeText("resto")
++        assertTrue(HistoricoArquivo(dir).apagar())
++        assertFalse(tmp.exists())
++    }
++}
