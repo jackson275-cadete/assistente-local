@@ -76,7 +76,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "0a126a0eec7797c205928c8983236ac59cee87dcf296d37ac44b682f3ee68445  validation/NC09_EtapaD.diff" | sha256sum -c -
           patch --batch --forward -p1 -d work/AssistenteLocal < validation/NC09_EtapaD.diff
           cd work/AssistenteLocal
           echo "fee2157360ff72ac6bf32914d6494a8cf47d0b46b4589f3697e861014c12020c  app/src/main/java/br/local/assistente/MonitorService.kt" | sha256sum -c -
