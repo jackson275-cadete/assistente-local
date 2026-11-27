@@ -1,0 +1,199 @@
+--- original/app/src/main/java/br/local/assistente/NucleoMemoria.kt
++++ EtapaA/app/src/main/java/br/local/assistente/NucleoMemoria.kt
+@@ -18,7 +18,8 @@
+     VALOR_MUITO_LONGO("O texto passa de ${NucleoMemoria.MAX_VALOR} caracteres. Nada foi salvo, cortado ou alterado."),
+     VALOR_RECUSADO("O valor parece um número longo (cartão, documento ou telefone) e não é guardado."),
+     FALHA_CRIPTOGRAFIA("Falha de criptografia. Nada foi alterado."),
+-    FALHA_GRAVACAO("Não consegui concluir a gravação no aparelho. O conteúdo anterior foi mantido."),
++    FALHA_GRAVACAO("Não consegui confirmar a gravação no aparelho."),
++    FALHA_RECUPERACAO("Não foi possível confirmar a recuperação dos dados. A integridade da memória é incerta."),
+     MEMORIA_INDISPONIVEL("A memória criptografada não está disponível. Nada foi salvo.");
+ 
+     val ok: Boolean get() = this == GRAVADO
+@@ -139,43 +140,62 @@
+     }
+ 
+     private fun salvarTravado(a: ArmazemChaveValor, chave: String, valor: String): ResultadoGravacao {
+-        var anteriorConhecido = true
+-        var anterior: String? = null
+-        try {
+-            anterior = a.ler(chave)
++        // Sem leitura confiável do estado anterior, não há base segura para gravar ou desfazer.
++        val anterior = try {
++            a.ler(chave)
+         } catch (e: FalhaArmazem) {
+             registrar(e)
+-            anteriorConhecido = false
++            return if (e.criptografia) ResultadoGravacao.FALHA_CRIPTOGRAFIA
++            else ResultadoGravacao.FALHA_GRAVACAO
+         }
+ 
+         var falha: FalhaArmazem? = null
+-        var gravou = false
+-        try {
+-            gravou = a.gravar(chave, valor)
++        val gravou = try {
++            a.gravar(chave, valor)
+         } catch (e: FalhaArmazem) {
+             falha = e
++            false
+         }
+ 
+         if (falha == null && gravou) {
+             try {
+                 if (a.ler(chave) == valor) return ResultadoGravacao.GRAVADO
++                ultimoErro = "A gravação não correspondeu ao valor enviado na verificação."
+             } catch (e: FalhaArmazem) {
+                 falha = e
+-            }
++                registrar(e)
++            }
++        } else if (falha == null) {
++            ultimoErro = "O armazenamento não confirmou a gravação."
+         }
+ 
+         val f = falha
+-        if (f != null) registrar(f) else ultimoErro = "A gravação não foi confirmada pelo armazenamento."
+-        if (anteriorConhecido) desfazer(a, chave, anterior)
+-        return if (f != null && f.criptografia) ResultadoGravacao.FALHA_CRIPTOGRAFIA else ResultadoGravacao.FALHA_GRAVACAO
+-    }
+-
+-    /** Devolve a chave ao estado anterior. Não toca em nada se o valor anterior não pôde ser lido. */
+-    private fun desfazer(a: ArmazemChaveValor, chave: String, anterior: String?) {
+-        try {
+-            if (anterior != null) a.gravar(chave, anterior) else a.remover(chave)
++        if (f != null) registrar(f)
++        val recuperado = desfazer(a, chave, anterior)
++        if (!recuperado) return ResultadoGravacao.FALHA_RECUPERACAO
++        return if (f != null && f.criptografia) ResultadoGravacao.FALHA_CRIPTOGRAFIA
++        else ResultadoGravacao.FALHA_GRAVACAO
++    }
++
++    /**
++     * Restaura exatamente o estado anterior e só confirma a recuperação depois de reler
++     * a chave e comparar inclusive o caso em que ela não existia.
++     */
++    private fun desfazer(a: ArmazemChaveValor, chave: String, anterior: String?): Boolean {
++        return try {
++            val alterou = if (anterior != null) a.gravar(chave, anterior) else a.remover(chave)
++            if (!alterou) {
++                ultimoErro = "O armazenamento não confirmou a restauração do valor anterior."
++                false
++            } else {
++                val atual = a.ler(chave)
++                val ok = atual == anterior
++                if (!ok) ultimoErro = "A verificação da restauração do valor anterior falhou."
++                ok
++            }
+         } catch (e: FalhaArmazem) {
+             registrar(e)
++            false
+         }
+     }
+ 
+@@ -223,49 +243,65 @@
+     }
+ 
+     private fun esquecerTravado(a: ArmazemChaveValor): ResultadoGravacao {
+-        var copia: Map<String, String>? = null
++        // A cópia completa é pré-condição. Falha de leitura aborta antes de limpar.
++        val copia = try {
++            HashMap(a.todos())
++        } catch (e: FalhaArmazem) {
++            registrar(e)
++            return if (e.criptografia) ResultadoGravacao.FALHA_CRIPTOGRAFIA
++            else ResultadoGravacao.FALHA_GRAVACAO
++        }
++
++        var falha: FalhaArmazem? = null
++        val limpou = try {
++            a.limpar()
++        } catch (e: FalhaArmazem) {
++            falha = e
++            false
++        }
++
++        if (falha == null && limpou) {
++            try {
++                if (a.todos().isEmpty()) return ResultadoGravacao.GRAVADO
++                ultimoErro = "Sobrou conteúdo depois de apagar."
++            } catch (e: FalhaArmazem) {
++                falha = e
++                registrar(e)
++            }
++        } else if (falha == null) {
++            ultimoErro = "O armazenamento não confirmou a limpeza."
++        }
++
++        val f = falha
++        if (f != null) registrar(f)
++        if (!restaurar(a, copia)) return ResultadoGravacao.FALHA_RECUPERACAO
++        return if (f != null && f.criptografia) ResultadoGravacao.FALHA_CRIPTOGRAFIA
++        else ResultadoGravacao.FALHA_GRAVACAO
++    }
++
++    /**
++     * Restaura o mapa completo: limpa possíveis resíduos, grava cada entrada e compara
++     * o mapa relido com a cópia original. Qualquer etapa não confirmada invalida a recuperação.
++     */
++    private fun restaurar(a: ArmazemChaveValor, copia: Map<String, String>): Boolean {
+         try {
+-            copia = a.todos()
++            if (!a.limpar()) {
++                ultimoErro = "O armazenamento não confirmou a limpeza preparatória da restauração."
++                return false
++            }
++            for ((k, v) in copia) {
++                if (!a.gravar(k, v)) {
++                    ultimoErro = "O armazenamento não confirmou uma entrada durante a restauração."
++                    return false
++                }
++            }
++            val restaurado = a.todos()
++            val ok = restaurado == copia
++            if (!ok) ultimoErro = "A verificação da cópia restaurada falhou."
++            return ok
+         } catch (e: FalhaArmazem) {
+             registrar(e)
+-        }
+-
+-        var falha: FalhaArmazem? = null
+-        var limpou = false
+-        try {
+-            limpou = a.limpar()
+-        } catch (e: FalhaArmazem) {
+-            falha = e
+-        }
+-
+-        if (falha == null && limpou) {
+-            return try {
+-                if (a.todos().isEmpty()) {
+-                    ResultadoGravacao.GRAVADO
+-                } else {
+-                    ultimoErro = "Sobrou conteúdo depois de apagar."
+-                    ResultadoGravacao.FALHA_GRAVACAO
+-                }
+-            } catch (e: FalhaArmazem) {
+-                registrar(e)
+-                ResultadoGravacao.FALHA_GRAVACAO
+-            }
+-        }
+-
+-        val f = falha
+-        if (f != null) registrar(f) else ultimoErro = "O apagamento não foi confirmado pelo armazenamento."
+-        restaurar(a, copia)
+-        return if (f != null && f.criptografia) ResultadoGravacao.FALHA_CRIPTOGRAFIA else ResultadoGravacao.FALHA_GRAVACAO
+-    }
+-
+-    private fun restaurar(a: ArmazemChaveValor, copia: Map<String, String>?) {
+-        if (copia == null) return
+-        for ((k, v) in copia) {
+-            try {
+-                a.gravar(k, v)
+-            } catch (e: FalhaArmazem) {
+-                registrar(e)
+-            }
++            return false
+         }
+     }
+ 
