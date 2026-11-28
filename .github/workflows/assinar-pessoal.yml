@@ -37,7 +37,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "871d37325be9b4aeb31384c7c7a7c1f7a00420f1b5d338b33030fffde1bfd77c3c9  AssistenteLocal_v0.8_isolada.zip" | sha256sum -c -
+          echo "871d37325be9b4aeb31384c7c7f1a00420f1b5d338b33030fffde1bfd77c3c9c  AssistenteLocal_v0.8_isolada.zip" | sha256sum -c -
           unzip -t AssistenteLocal_v0.8_isolada.zip
 
       - name: Reconstruir correções NC-01 a NC-04
