@@ -7,3 +7,5 @@ Conferência aapt2 com cancelamento de duplicatas antigas.
 Reexecutar aapt2 com diagnóstico detalhado.
 
 retry-aapt2-1
+
+retry-aapt2-label-pattern
