@@ -1,0 +1,1 @@
+Reexecutar validação NC-11 após correção do caminho do artefato. Sem alteração do pacote congelado ou dos hashes aprovados.
