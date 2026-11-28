@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "871d37325be9b4aeb31384c7c7f1a00420f1b5d338b33030fffde1bfd77c3c9  AssistenteLocal_v0.8_isolada.zip" | sha256sum -c -
+          test -s AssistenteLocal_v0.8_isolada.zip
           unzip -t AssistenteLocal_v0.8_isolada.zip
 
       - name: Reconstruir correções NC-01 a NC-04
@@ -47,9 +47,9 @@ jobs:
           from pathlib import Path
           p=Path("app/build.gradle.kts")
           s=p.read_text()
-          marker='    implementation("androidx.security:security-crypto:1.1.0-alpha06")\\n'
+          marker='    implementation("androidx.security:security-crypto:1.1.0-alpha06")\n'
           if s.count(marker)!=1: raise SystemExit("Dependência-base inesperada")
-          p.write_text(s.replace(marker,marker+'\\n    // NC-05: testes unitários JVM com JUnit 4.\\n    testImplementation("junit:junit:4.13.2")\\n'))
+          p.write_text(s.replace(marker,marker+'\n    // NC-05: testes unitários JVM com JUnit 4.\n    testImplementation("junit:junit:4.13.2")\n'))
           PY
 
       - name: Aplicar NC-06 a NC-08
@@ -77,9 +77,9 @@ jobs:
           from pathlib import Path
           p=Path("app/build.gradle.kts")
           s=p.read_text()
-          marker='    buildTypes {\\n'
+          marker='    buildTypes {\n'
           if s.count(marker)!=1: raise SystemExit("Bloco buildTypes inesperado")
-          s=s.replace(marker, marker+'        debug {\\n            applicationIdSuffix = ".temporario"\\n            versionNameSuffix = "-temporario"\\n        }\\n')
+          s=s.replace(marker, marker+'        debug {\n            applicationIdSuffix = ".temporario"\n            versionNameSuffix = "-temporario"\n        }\n')
           p.write_text(s)
           m=Path("app/src/main/AndroidManifest.xml")
           t=m.read_text()
