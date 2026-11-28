@@ -1,0 +1,312 @@
+name: NC-11 - Assinatura pessoal protegida
+
+on:
+  push:
+    branches: [assinatura-nc11]
+    paths:
+      - ".github/workflows/assinar-pessoal.yml"
+      - "validation/**"
+  workflow_dispatch:
+    inputs:
+      assinar:
+        description: "Executar assinatura real (exige Environment assinatura e Secrets configurados)"
+        required: true
+        type: choice
+        options:
+          - "false"
+          - "true"
+        default: "false"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: assinatura-pessoal-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validar-pacote:
+    name: Validar pacote congelado sem Secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Conferir ZIP-base original
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "871d37325be9b4aeb31384c7c7f1a00420f1b5d338b33030fffde1bfd77c3c9c  AssistenteLocal_v0.8_isolada.zip" | sha256sum -c -
+          unzip -t AssistenteLocal_v0.8_isolada.zip
+
+      - name: Reconstruir correções NC-01 a NC-04
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p work
+          unzip -q AssistenteLocal_v0.8_isolada.zip -d work
+          patch --batch --forward -p1 -d work/AssistenteLocal < validation/EtapaA_NucleoMemoria_final.diff
+          patch --batch --forward -p1 -d work/AssistenteLocal < validation/EtapaA_NucleoMemoriaTest_final.diff
+
+      - name: Integrar JUnit 4 e conferir NC-05
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd work/AssistenteLocal
+          echo "8ca6084b9c950d938240088f31b1fbc5605b0b90890d937e9e3c73e8c6647db9  app/build.gradle.kts" | sha256sum -c -
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("app/build.gradle.kts")
+          s = p.read_text()
+          marker = '    implementation("androidx.security:security-crypto:1.1.0-alpha06")\n'
+          if s.count(marker) != 1:
+              raise SystemExit("Dependência-base inesperada; abortando")
+          p.write_text(s.replace(marker, marker + '\n    // NC-05: testes unitários JVM com JUnit 4.\n    testImplementation("junit:junit:4.13.2")\n'))
+          PY
+          echo "5c56fb2db2161f4756f2c7528cb5bc01f30c543cf06affb608acfb066208881e  app/src/main/java/br/local/assistente/NucleoMemoria.kt" | sha256sum -c -
+          echo "67711e7b57f32aee2c8b97191d762f1c35ba68bd181af0835f896ebdbbcefab7  app/src/test/java/br/local/assistente/NucleoMemoriaTest.kt" | sha256sum -c -
+
+      - name: Aplicar Etapa C NC-06 a NC-08
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch --batch --forward -p1 -d work/AssistenteLocal < validation/NC06_EtapaC.diff
+          cd work/AssistenteLocal
+          echo "c7874e0f3afc65f7e40624fa60278f8e7ac8243e26e38bdbc8ac29afc17965b2  app/src/main/java/br/local/assistente/Historico.kt" | sha256sum -c -
+          echo "d51ea7bf863c5f32ac995cd551b174faadcf57872645f0971a19e9446f07b4f1  app/src/main/java/br/local/assistente/MainActivity.kt" | sha256sum -c -
+          echo "7ecfcba243e12ce21a57e7d585c2158808c75b69f5537e83a6349b7f76a60fab  app/src/test/java/br/local/assistente/HistoricoArquivoTest.kt" | sha256sum -c -
+
+      - name: Aplicar NC-09
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch --batch --forward -p1 -d work/AssistenteLocal < validation/NC09_EtapaD.diff
+          cd work/AssistenteLocal
+          echo "fee2157360ff72ac6bf32914d6494a8cf47d0b46b4589f3697e861014c12020c  app/src/main/java/br/local/assistente/MonitorService.kt" | sha256sum -c -
+          echo "54929d420a0bafc3dbb31ab6107d46307b4662824a6aa3475d8561ef16037935  app/src/main/java/br/local/assistente/PersistenciaMonitor.kt" | sha256sum -c -
+          echo "13f6727da9090b7935b20e0de22d90aab5c5d371e5ce6f471b297d73aa19d84b  app/src/test/java/br/local/assistente/PersistenciaMonitorTest.kt" | sha256sum -c -
+
+      - name: Aplicar NC-10 e identidade pessoal aprovada
+        shell: bash
+        run: |
+          set -euo pipefail
+          patch --batch --forward -p2 -d work/AssistenteLocal < validation/NC10_doc.diff
+          patch --batch --forward -p2 -d work/AssistenteLocal < validation/Pessoal_config.diff
+          find work -type f -name '*.orig' -print -delete
+          find work -type f -name '*.rej' -print -delete
+          test -z "$(find work -type f -name '*.orig' -print)"
+          test -z "$(find work -type f -name '*.rej' -print)"
+
+      - name: Conferir manifesto e allowlist exata de 22 arquivos
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd work
+          sha256sum -c ../validation/Pessoal_manifest.sha256
+          python3 - <<'PY'
+          from pathlib import Path
+          lines = [line for line in Path("../validation/Pessoal_manifest.sha256").read_text().splitlines() if line.strip()]
+          expected = {line.split(None, 1)[1].strip() for line in lines}
+          actual = {p.relative_to(Path(".")).as_posix() for p in Path(".").rglob("*") if p.is_file()}
+          if len(expected) != 22 or actual != expected:
+              raise SystemExit(f"Allowlist divergente: esperados={len(expected)}, extras={sorted(actual-expected)}, ausentes={sorted(expected-actual)}")
+          print("Allowlist exata: 22 arquivos; nenhum extra ou ausente.")
+          PY
+          cd AssistenteLocal
+          test "$(grep -c '^[[:space:]]*@Test' app/src/test/java/br/local/assistente/NucleoMemoriaTest.kt)" -eq 36
+          test "$(grep -c '^[[:space:]]*@Test' app/src/test/java/br/local/assistente/HistoricoArquivoTest.kt)" -eq 7
+          test "$(grep -c '^[[:space:]]*@Test' app/src/test/java/br/local/assistente/PersistenciaMonitorTest.kt)" -eq 6
+          grep -Fq 'applicationId = "br.local.assistente.pessoal"' app/build.gradle.kts
+          grep -Fq 'versionCode = 800' app/build.gradle.kts
+          grep -Fq 'versionName = "0.8.0"' app/build.gradle.kts
+          grep -Fq 'android:label="Assistente Local (pessoal)"' app/src/main/AndroidManifest.xml
+          test "$(grep -c 'uses-permission' app/src/main/AndroidManifest.xml)" -eq 7
+          ! grep -q 'android.permission.INTERNET' app/src/main/AndroidManifest.xml
+          ! find . -type f | grep -iE '\.(p12|pfx|jks|keystore|b64)$'
+          ! find . -type f -name 'debug.keystore' | grep .
+
+      - name: Reconstruir ZIP congelado e comparar hash aprovado
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd work
+          python3 - <<'PY'
+          from pathlib import Path
+          from zipfile import ZipFile, ZipInfo, ZIP_STORED
+          root = Path("AssistenteLocal")
+          out = Path("../AssistenteLocal_pessoal_NC01-10_candidato-congelamento.zip")
+          paths = [root] + sorted(root.rglob("*"), key=lambda p: p.relative_to(root.parent).as_posix())
+          with ZipFile(out, "w", compression=ZIP_STORED, strict_timestamps=True) as z:
+              for p in paths:
+                  name = p.relative_to(root.parent).as_posix()
+                  is_dir = p.is_dir()
+                  if is_dir:
+                      name += "/"
+                  info = ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
+                  info.create_system = 3
+                  info.compress_type = ZIP_STORED
+                  info.extra = b""
+                  info.comment = b""
+                  info.external_attr = ((0o40755 << 16) | 0x10) if is_dir else (0o100644 << 16)
+                  z.writestr(info, b"" if is_dir else p.read_bytes())
+          PY
+          echo "0d35cb5915e30e8fe44769bc519e5f4ead7020dfe46faf19907224726bcffa89  ../AssistenteLocal_pessoal_NC01-10_candidato-congelamento.zip" | sha256sum -c -
+          unzip -t ../AssistenteLocal_pessoal_NC01-10_candidato-congelamento.zip
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v4.2.2
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configurar Gradle 8.7
+        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+        with:
+          gradle-version: "8.7"
+          cache-disabled: true
+
+      - name: Confirmar que configuração parcial de assinatura falha
+        working-directory: work/AssistenteLocal
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          SIGNING_KEY_ALIAS=sentinel gradle help --no-daemon --console=plain > partial-signing.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "ERRO: configuração parcial de assinatura foi aceita."
+            exit 1
+          fi
+          grep -Fq "Configuração de assinatura incompleta" partial-signing.log
+
+      - name: Executar 49 testes JVM e primeira compilação release sem assinatura
+        working-directory: work/AssistenteLocal
+        run: gradle testDebugUnitTest assembleRelease --no-daemon --stacktrace --console=plain
+
+      - name: Conferir identidade e permissões do release não assinado
+        working-directory: work/AssistenteLocal
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)
+          test -n "$APK"
+          AAPT2=$(find "$ANDROID_HOME/build-tools" -type f -name aapt2 | sort -V | tail -1)
+          "$AAPT2" dump badging "$APK" | tee badging.txt
+          "$AAPT2" dump xmltree --file AndroidManifest.xml "$APK" | tee manifesto.txt
+          grep -q "package: name='br.local.assistente.pessoal'" badging.txt
+          grep -q "versionCode='800'" badging.txt
+          grep -q "versionName='0.8.0'" badging.txt
+          grep -Fq "application: label='Assistente Local (pessoal)'" badging.txt
+          ! grep -q 'application-debuggable' badging.txt
+          grep -Fq "uses-permission: name='android.permission.FOREGROUND_SERVICE'" badging.txt
+          grep -Fq "uses-permission: name='android.permission.RECEIVE_BOOT_COMPLETED'" badging.txt
+          ! grep -Fq "uses-permission: name='android.permission.INTERNET'" badging.txt
+          echo "Build sem assinatura validado; APK permanece no runner."
+
+      - name: Disponibilizar somente o pacote-fonte validado para o job protegido
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: pacote-pessoal-congelado
+          path: AssistenteLocal_pessoal_NC01-10_candidato-congelamento.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  assinar:
+    name: Assinar somente após autorização manual
+    needs: validar-pacote
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.assinar == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: assinatura
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Baixar pacote-fonte validado do mesmo run
+        uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          name: pacote-pessoal-congelado
+          path: incoming
+
+      - name: Revalidar ZIP e manifesto aprovado
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "0d35cb5915e30e8fe44769bc519e5f4ead7020dfe46faf19907224726bcffa89  incoming/AssistenteLocal_pessoal_NC01-10_candidato-congelamento.zip" | sha256sum -c -
+          mkdir -p work
+          unzip -q incoming/AssistenteLocal_pessoal_NC01-10_candidato-congelamento.zip -d work
+          cd work
+          sha256sum -c ../validation/Pessoal_manifest.sha256
+
+      - name: Preparar keystore temporário e conferir certificado aprovado
+        shell: bash
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+          SIGNING_KEYSTORE_FILE: ${{ runner.temp }}/assistente-local-release.p12
+        run: |
+          set -euo pipefail
+          test -n "$SIGNING_KEYSTORE_BASE64"
+          test -n "$SIGNING_STORE_PASSWORD"
+          test -n "$SIGNING_KEY_ALIAS"
+          test -n "$SIGNING_KEY_PASSWORD"
+          printf '%s' "$SIGNING_KEYSTORE_BASE64" | base64 --decode > "$SIGNING_KEYSTORE_FILE"
+          chmod 600 "$SIGNING_KEYSTORE_FILE"
+          test -s "$SIGNING_KEYSTORE_FILE"
+          EXPECTED="5C:6E:E3:EF:BD:12:19:25:8A:CD:17:10:B2:6B:13:82:4F:74:D6:ED:E9:F1:48:FC:E4:DC:64:EB:84:81:A3:D9"
+          ACTUAL=$(keytool -list -v -keystore "$SIGNING_KEYSTORE_FILE" -storetype PKCS12 -storepass "$SIGNING_STORE_PASSWORD" | awk -F': ' '/SHA256:/{print $2; exit}')
+          test "$ACTUAL" = "$EXPECTED"
+          echo "Certificado corresponde ao fingerprint aprovado."
+
+      - name: Configurar Java 17
+        uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v4.2.2
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Configurar Gradle 8.7
+        uses: gradle/actions/setup-gradle@017a9effdb900e5b5b2fddfb590a105619dca3c3 # v4.4.2
+        with:
+          gradle-version: "8.7"
+          cache-disabled: true
+
+      - name: Compilar release assinado com Secrets restritos
+        working-directory: work/AssistenteLocal
+        env:
+          SIGNING_KEYSTORE_FILE: ${{ runner.temp }}/assistente-local-release.p12
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: gradle testDebugUnitTest assembleRelease --no-daemon --stacktrace --console=plain
+
+      - name: Verificar assinatura, certificado e identidade do APK
+        working-directory: work/AssistenteLocal
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' -print -quit)
+          test -n "$APK"
+          BUILD_TOOLS=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -1)
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" | tee assinatura.txt
+          ACTUAL=$(awk -F': ' '/Signer #1 certificate SHA-256 digest:/{print tolower($2); exit}' assinatura.txt)
+          EXPECTED="5c6ee3efbd1219258acd1710b26b13824f74d6ede9f148fce4dc64eb8481a3d9"
+          test "$ACTUAL" = "$EXPECTED"
+          "$BUILD_TOOLS/aapt2" dump badging "$APK" | tee badging.txt
+          grep -q "package: name='br.local.assistente.pessoal'" badging.txt
+          grep -q "versionCode='800'" badging.txt
+          grep -q "versionName='0.8.0'" badging.txt
+          grep -Fq "application: label='Assistente Local (pessoal)'" badging.txt
+          ! grep -q 'application-debuggable' badging.txt
+          echo "APK assinado e certificado conferidos. Nenhum download ou instalação foi executado."
+
+      - name: Guardar APK assinado como artefato privado do run
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: AssistenteLocal-pessoal-release-assinado
+          path: work/AssistenteLocal/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 7
