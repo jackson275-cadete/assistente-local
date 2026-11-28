@@ -87,6 +87,9 @@ jobs:
           set -euo pipefail
           patch --batch --forward -p2 -d work/AssistenteLocal < validation/NC10_doc.diff
           patch --batch --forward -p2 -d work/AssistenteLocal < validation/Pessoal_config.diff
+          # Backups .orig/.rej são resíduos do patch, nunca parte do pacote.
+          find work -type f \\( -name '*.orig' -o -name '*.rej' \\) -print -delete
+          test -z "$(find work -type f \\( -name '*.orig' -o -name '*.rej' \\) -print)"
 
       - name: Conferir manifesto completo dos 22 arquivos e regras do pacote
         shell: bash
@@ -94,6 +97,15 @@ jobs:
           set -euo pipefail
           cd work
           sha256sum -c ../validation/Pessoal_manifest.sha256
+          python3 - <<'PY'
+          from pathlib import Path
+          manifest = Path("../validation/Pessoal_manifest.sha256").read_text().splitlines()
+          expected = {line.split(None, 1)[1].strip() for line in manifest if line.strip()}
+          actual = {p.relative_to(Path(".")).as_posix() for p in Path(".").rglob("*") if p.is_file()}
+          if actual != expected:
+              raise SystemExit(f"Allowlist divergente; extras={sorted(actual-expected)} ausentes={sorted(expected-actual)}")
+          print(f"Allowlist exata aprovada: {len(actual)} arquivos, sem extras.")
+          PY
           cd AssistenteLocal
           test "$(grep -c '^[[:space:]]*@Test' app/src/test/java/br/local/assistente/NucleoMemoriaTest.kt)" -eq 36
           test "$(grep -c '^[[:space:]]*@Test' app/src/test/java/br/local/assistente/HistoricoArquivoTest.kt)" -eq 7
@@ -147,6 +159,22 @@ jobs:
         with:
           gradle-version: "8.7"
           cache-disabled: true
+
+      - name: Confirmar bloqueio de configuração parcial de assinatura
+        working-directory: work/AssistenteLocal
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          SIGNING_KEY_ALIAS=sentinel gradle help --no-daemon --console=plain > partial-signing.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            echo "ERRO: configuração parcial foi aceita."
+            exit 1
+          fi
+          grep -Fq "Configuração de assinatura incompleta" partial-signing.log
+          echo "Configuração parcial corretamente bloqueada."
 
       - name: Executar 49 testes JVM e compilar release sem assinatura
         working-directory: work/AssistenteLocal
