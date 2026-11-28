@@ -15,7 +15,7 @@
 +- Assinatura permanente: somente via variáveis temporárias do workflow protegido; nenhuma chave fica no projeto.
 --- a/AssistenteLocal/app/build.gradle.kts
 +++ b/AssistenteLocal/app/build.gradle.kts
-@@ -8,28 +8,39 @@
+@@ -8,28 +8,46 @@
      compileSdk = 34
  
      defaultConfig {
@@ -46,8 +46,15 @@
 +    val signingStorePassword = System.getenv("SIGNING_STORE_PASSWORD")
 +    val signingAlias = System.getenv("SIGNING_KEY_ALIAS")
 +    val signingKeyPassword = System.getenv("SIGNING_KEY_PASSWORD")
-+    val signingReady = listOf(signingFile, signingStorePassword, signingAlias, signingKeyPassword)
-+        .all { !it.isNullOrBlank() }
++    val signingValues = listOf(signingFile, signingStorePassword, signingAlias, signingKeyPassword)
++    val signingAny = signingValues.any { !it.isNullOrBlank() }
++    val signingReady = signingValues.all { !it.isNullOrBlank() }
++
++    // Sem variáveis: release não assinado é permitido para validação.
++    // Configuração parcial: falhar, nunca produzir silenciosamente um APK sem assinatura.
++    if (signingAny && !signingReady) {
++        throw GradleException("Configuração de assinatura incompleta: informe as quatro variáveis SIGNING_*.")
++    }
 +
 +    if (signingReady) {
 +        signingConfigs {
