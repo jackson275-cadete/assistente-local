@@ -167,10 +167,11 @@ jobs:
           grep -q "versionCode='800'" badging.txt
           grep -q "versionName='0.8.0'" badging.txt
           grep -Fq "application-label:'Assistente Local (pessoal)'" badging.txt
-          test "$(grep -Fc 'Assistente Local (pessoal)' manifesto.txt)" -ge 2
+          test "$(grep -Fc '="Assistente Local (pessoal)"' manifesto.txt)" -ge 2
           ! grep -q 'application-debuggable' badging.txt
-          "$AAPT2" dump permissions "$APK" | tee permissions.txt
-          grep -q 'android.permission.FOREGROUND_SERVICE' permissions.txt
-          grep -q 'android.permission.RECEIVE_BOOT_COMPLETED' permissions.txt
-          ! grep -q 'android.permission.INTERNET' permissions.txt
+          # aapt2 dump badging já expõe uses-permission; não chamar o subcomando
+          # "dump permissions", que não existe nesta versão do aapt2.
+          grep -Fq "uses-permission: name='android.permission.FOREGROUND_SERVICE'" badging.txt
+          grep -Fq "uses-permission: name='android.permission.RECEIVE_BOOT_COMPLETED'" badging.txt
+          ! grep -Fq "uses-permission: name='android.permission.INTERNET'" badging.txt
           echo "Release sem assinatura: identidade, rótulos, permissões críticas e debuggable conferidos."
