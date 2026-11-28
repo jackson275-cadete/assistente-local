@@ -88,8 +88,10 @@ jobs:
           patch --batch --forward -p2 -d work/AssistenteLocal < validation/NC10_doc.diff
           patch --batch --forward -p2 -d work/AssistenteLocal < validation/Pessoal_config.diff
           # Backups .orig/.rej são resíduos do patch, nunca parte do pacote.
-          find work -type f \\( -name '*.orig' -o -name '*.rej' \\) -print -delete
-          test -z "$(find work -type f \\( -name '*.orig' -o -name '*.rej' \\) -print)"
+          find work -type f -name '*.orig' -print -delete
+          find work -type f -name '*.rej' -print -delete
+          test -z "$(find work -type f -name '*.orig' -print)"
+          test -z "$(find work -type f -name '*.rej' -print)"
 
       - name: Conferir manifesto completo dos 22 arquivos e regras do pacote
         shell: bash
