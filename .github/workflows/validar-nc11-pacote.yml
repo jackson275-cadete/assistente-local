@@ -166,7 +166,7 @@ jobs:
           grep -q "package: name='br.local.assistente.pessoal'" badging.txt
           grep -q "versionCode='800'" badging.txt
           grep -q "versionName='0.8.0'" badging.txt
-          grep -Fq "application-label:'Assistente Local (pessoal)'" badging.txt
+          grep -Fq "application: label='Assistente Local (pessoal)'" badging.txt
           test "$(grep -Fc '="Assistente Local (pessoal)"' manifesto.txt)" -ge 2
           ! grep -q 'application-debuggable' badging.txt
           # aapt2 dump badging já expõe uses-permission; não chamar o subcomando
