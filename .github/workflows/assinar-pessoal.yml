@@ -151,8 +151,8 @@ jobs:
                   info.external_attr = ((0o40755 << 16) | 0x10) if is_dir else (0o100644 << 16)
                   z.writestr(info, b"" if is_dir else p.read_bytes())
           PY
-          echo "0d35cb5915e30e8fe44769bc519e5f4ead7020dfe46faf19907224726bcffa89  AssistenteLocal_pessoal_NC01-10_candidato-congelamento.zip" | sha256sum -c -
-          unzip -t AssistenteLocal_pessoal_NC01-10_candidato-congelamento.zip
+          echo "0d35cb5915e30e8fe44769bc519e5f4ead7020dfe46faf19907224726bcffa89  ../AssistenteLocal_pessoal_NC01-10_candidato-congelamento.zip" | sha256sum -c -
+          unzip -t ../AssistenteLocal_pessoal_NC01-10_candidato-congelamento.zip
 
       - name: Configurar Java 17
         uses: actions/setup-java@dded0888837ed1f317902acf8a20df0ad188d165 # v4.2.2
